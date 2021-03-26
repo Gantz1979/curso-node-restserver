@@ -1,34 +1,76 @@
-const { response } = require('express')
+const { response } = require('express');
+const bcryptjs     = require('bcryptjs');
+
+const Usuario = require('../models/usuario');
+
  
-const usuariosGet = (req, res = response) => {
+const usuariosGet = async(req, res = response) => {
 
-  const { q, apikey } = req.query; 
+  const { limite = 5, desde = 0 } = req.query; 
+  const filtro = { estado:true};
+
+  /*
+  const usuarios = await Usuario.find( filtro )
+        .skip( Number( desde ) )
+        .limit( Number( limite ) );
+
+  const total = await Usuario.countDocuments( filtro );
+ */ // CODIGO MEJORADO ABAJO// CONCURRENTE
+  
+  const [total, usuarios] = await Promise.all( [    //EJECUTA LAS PROMESAS AL MISMO TIEMPO--> LA DE ARRIBA ESPERABA UNA PARA INICIAR LA SIGUIENTE
+    Usuario.countDocuments( filtro ),
+    Usuario.find( filtro )
+           .skip( Number( desde ) )
+           .limit( Number( limite ) ),
+  ]);
+
+  //total resultado
+  const totalResultado = usuarios.length;
 
   res.json( {
-    msj: 'GET API - controlador',
-    q,
-    apikey
+    total,
+    totalResultado,
+    usuarios
   });
 }
 
-const usuariosPost = (req, res = response) => {
+const usuariosPost = async(req, res = response) => {
 
-  const { nombre, edad } = req.body;
+  const { nombre, correo, password, rol } = req.body;
+  const usuario = new Usuario( { nombre, correo, password, rol } );
+
+  //encriptar contraseña
+  const salt = bcryptjs.genSaltSync();
+  usuario.password = bcryptjs.hashSync( password, salt)
+
+  //guardar en BD
+  await usuario.save();
 
   res.json( {
-    msj: 'POST API - controlador',
-    nombre,
-    edad
+    usuario
   });
 }
 
-const usuariosPut = (req, res = response) => {
+const usuariosPut = async(req, res = response) => {
 
   const { id } = req.params;
+  const { _id, password, google, correo, ...resto } = req.body;
+
+  //TODO: VAlidar contra BD
+  if ( password ) {
+     //encriptar la contraseña
+     const salt = bcryptjs.genSaltSync();
+     resto.password = bcryptjs.hashSync( password, salt)
+  }
+
+  const usuario = await Usuario.findByIdAndUpdate( id, resto, {new: true} ); // por defecto esta en false y retorna el objeto antes anterior al actualizado
+  console.log(usuario);
+ 
+
   res.json( {
-    msj: 'PUT API - controlador',
-    id
+    usuario
   });
+
 }
 
 const usuariosPatch = (req, res = response) => {
@@ -37,10 +79,15 @@ const usuariosPatch = (req, res = response) => {
   });
 }
 
-const usuariosDelete = (req, res = response) => {
-  res.json( {
-    msj: 'DELETE API - controlador'
-  });
+const usuariosDelete = async(req, res = response) => {
+
+  const { id } = req.params;
+
+  //Fisicamente lo borramos
+  //const usuario = await Usuario.findByIdAndDelete( id );
+  const usuario = await Usuario.findByIdAndUpdate( id,  {estado: false} , {new: true})
+
+  res.json( usuario );
 }
 
 module.exports = {
